@@ -125,7 +125,7 @@ class BME280(object):
         self._filter = filter
         # Create I2C device.
         if spi_bus is not None and spi_dev is not None:
-            from . import _spidev
+            from Adafruit_BME280 import _spidev
             self._spi_bus = int(spi_bus)
             self._spi_dev = int(spi_dev)
             self._device = _spidev.Device(self._spi_bus,self._spi_dev)
