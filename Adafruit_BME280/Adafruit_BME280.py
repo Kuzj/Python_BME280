@@ -125,10 +125,10 @@ class BME280(object):
         self._filter = filter
         # Create I2C device.
         if spi_bus is not None and spi_dev is not None:
-            from Adafruit_BME280 import _spidev
+            from Adafruit_BME280 import Device
             self._spi_bus = int(spi_bus)
             self._spi_dev = int(spi_dev)
-            self._device = _spidev.Device(self._spi_bus,self._spi_dev)
+            self._device = Device(self._spi_bus,self._spi_dev)
         elif i2c is None:
             import Adafruit_GPIO.I2C as I2C
             i2c = I2C
@@ -323,7 +323,7 @@ class BME280(object):
             else:
                 self._ok = False
             humidity = self.read_humidity()
-            if (humidity >= 0) and (humidity <= 100):
+            if (humidity > 0) and (humidity < 100):
                 self._humidity = humidity
             else:
                 self._ok = False
