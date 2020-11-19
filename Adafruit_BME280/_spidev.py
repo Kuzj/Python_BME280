@@ -25,11 +25,16 @@ import spidev
 logging.basicConfig()
 
 WRITE = 0x7F
+speed_hz = 13#5000
+delay_usec = 100000
 
 class Device(object):
-    def __init__(self, bus, dev):
+    def __init__(self, bus, dev, speed_hz = speed_hz, delay_usec = delay_usec):
         self._dev = spidev.SpiDev()
         self._dev.open(bus,dev)
+        #self._dev.mode = 0
+        self._speed_hz = speed_hz
+        self._delay_usec = delay_usec
         self._logger = logging.getLogger('Spi.Device.Bus.{0}.Dev.{1}'.format(bus, dev))
         #self._logger.setLevel(logging.DEBUG)
 
@@ -40,7 +45,7 @@ class Device(object):
         to_send = []
         to_send.append(register&WRITE)
         to_send.append(value)
-        self._dev.xfer2(to_send)
+        self._dev.xfer(to_send, self._speed_hz, self._delay_usec)
         self._logger.debug("Wrote 0x%02X to register 0x%02X",
                      value, register)
 
@@ -71,7 +76,7 @@ class Device(object):
         to_send = []
         to_send.append(register)
         to_send.extend([0]*length)
-        results = self._dev.xfer2(to_send)[1:]
+        results = self._dev.xfer(to_send, self._speed_hz, self._delay_usec)[1:]
         self._logger.debug("Read the following from register 0x%02X: %s",
                      register, results)
         return results
@@ -82,7 +87,7 @@ class Device(object):
         to_send = []
         to_send.append(register)
         to_send.append(0)
-        result = self._dev.xfer2(to_send)[1]
+        result = self._dev.xfer2(to_send, self._speed_hz, self._delay_usec)[1]
         self._logger.debug("Read 0x%02X from register 0x%02X",
                      result, register)
         return result
@@ -102,7 +107,7 @@ class Device(object):
         to_send = []
         to_send.append(register)
         to_send.extend([0,0])
-        reg,d1,d2 = self._dev.xfer2(to_send)
+        reg,d1,d2 = self._dev.xfer(to_send, self._speed_hz, self._delay_usec)
         result = ((d1<<8)+d2)
         self._logger.debug("Read 0x%04X from register pair 0x%02X, 0x%02X",
                            result, register, register+1)
