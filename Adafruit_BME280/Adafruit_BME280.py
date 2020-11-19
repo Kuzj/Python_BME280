@@ -24,6 +24,9 @@
 # THE SOFTWARE.
 import logging
 import time
+import json
+
+from collections import Counter
 
 # BME280 default address.
 BME280_I2CADDR = 0x77
@@ -86,14 +89,33 @@ BME280_REGISTER_CONTROL = 0xF4
 BME280_REGISTER_CONFIG = 0xF5
 BME280_REGISTER_DATA = 0xF7
 
+def round02(func):
+    def wrapper(*args, **kwargs):
+        return round(func(*args, **kwargs)*5)/5
+    return wrapper
+
+def round0(func):
+    def wrapper(*args, **kwargs):
+        return round(func(*args, **kwargs))
+    return wrapper
+
 class BME280ReadError(Exception):
+    pass
+
+_LOGGER = logging.getLogger(__name__)
+
+config = False
+# Load config from file if exist
+try:
+    with open('bme280.json') as config_file:
+        config = json.load(config_file)
+except:
     pass
 
 class BME280(object):
     def __init__(self, t_mode=BME280_OSAMPLE_1, p_mode=BME280_OSAMPLE_1, h_mode=BME280_OSAMPLE_1,
                  standby=BME280_STANDBY_250, filter=BME280_FILTER_off, address=BME280_I2CADDR, i2c=None,
                  spi_bus=None, spi_dev=None,**kwargs):
-        self._logger = logging.getLogger('Adafruit_BMP.BMP085')
         # Check that t_mode is valid.
         if t_mode not in [BME280_OSAMPLE_1, BME280_OSAMPLE_2, BME280_OSAMPLE_4,
                         BME280_OSAMPLE_8, BME280_OSAMPLE_16]:
@@ -139,13 +161,17 @@ class BME280(object):
                 print("Unable to communicate with sensor, check permissions.")
                 exit()
         # Load calibration values.
-        self._load_calibration()
+        if config and f'spi{spi_bus}.{spi_dev}' in config:
+            print('load calibration from file')
+            self._load_calibration_json(config[f'spi{spi_bus}.{spi_dev}'])
+        else:
+            self._load_calibration()
         self._device.write8(BME280_REGISTER_CONTROL, 0x24)  # Sleep mode
         time.sleep(0.002)
         self._device.write8(BME280_REGISTER_CONFIG, ((standby << 5) | (filter << 2)))
         time.sleep(0.002)
         self._device.write8(BME280_REGISTER_CONTROL_HUM, h_mode)  # Set Humidity Oversample
-        self._device.write8(BME280_REGISTER_CONTROL, ((t_mode << 5) | (p_mode << 2) | 3))  # Set Temp/Pressure Oversample and enter Normal mode
+        self._device.write8(BME280_REGISTER_CONTROL, ((t_mode << 5) | (p_mode << 2) | 3))  # Set Temp/Pressure Oversample and enter Normal mode(3) Forced mode(2)
         self.t_fine = 0.0
         self._humidity = None
         self._temperature = None
@@ -153,6 +179,31 @@ class BME280(object):
         self._ok = None
         self.update()
 
+    def _load_calibration_json(self, data):
+        try:
+            self.dig_T1 = data["T1"]
+            self.dig_T2 = data["T2"]
+            self.dig_T3 = data["T3"]
+
+            self.dig_P1 = data["P1"]
+            self.dig_P2 = data["P2"]
+            self.dig_P3 = data["P3"]
+            self.dig_P4 = data["P4"]
+            self.dig_P5 = data["P5"]
+            self.dig_P6 = data["P6"]
+            self.dig_P7 = data["P7"]
+            self.dig_P8 = data["P8"]
+            self.dig_P9 = data["P9"]
+
+            self.dig_H1 = data["H1"]
+            self.dig_H2 = data["H2"]
+            self.dig_H3 = data["H3"]
+            self.dig_H4 = data["H4"]
+            self.dig_H5 = data["H5"]
+            self.dig_H6 = data["H6"]
+        except:
+            self._load_calibration()
+    
     def _load_calibration(self):
 
         self.dig_T1 = self._device.readU16BE(BME280_REGISTER_DIG_T1)
@@ -182,20 +233,28 @@ class BME280(object):
         h5 = (h5 << 4)
         self.dig_H5 = h5 | (
         self._device.readU8(BME280_REGISTER_DIG_H5) >> 4 & 0x0F)
+        print('_load_calibration')
+        print(f'T1: {self.dig_T1}')
+        print(f'T2: {self.dig_T2}')
+        print(f'T3: {self.dig_T3}')
 
-        '''
-        print '0xE4 = {0:2x}'.format (self._device.readU8 (BME280_REGISTER_DIG_H4))
-        print '0xE5 = {0:2x}'.format (self._device.readU8 (BME280_REGISTER_DIG_H5))
-        print '0xE6 = {0:2x}'.format (self._device.readU8 (BME280_REGISTER_DIG_H6))
+        print(f'P1: {self.dig_P1}')
+        print(f'P2: {self.dig_P2}')
+        print(f'P3: {self.dig_P3}')
+        print(f'P4: {self.dig_P4}')
+        print(f'P5: {self.dig_P5}')
+        print(f'P6: {self.dig_P6}')
+        print(f'P7: {self.dig_P7}')
+        print(f'P8: {self.dig_P8}')
+        print(f'P9: {self.dig_P9}')
 
-        print 'dig_H1 = {0:d}'.format (self.dig_H1)
-        print 'dig_H2 = {0:d}'.format (self.dig_H2)
-        print 'dig_H3 = {0:d}'.format (self.dig_H3)
-        print 'dig_H4 = {0:d}'.format (self.dig_H4)
-        print 'dig_H5 = {0:d}'.format (self.dig_H5)
-        print 'dig_H6 = {0:d}'.format (self.dig_H6)
-        '''
-
+        print(f'H1: {self.dig_H1}')
+        print(f'H2: {self.dig_H2}')
+        print(f'H3: {self.dig_H3}')
+        print(f'H4: {self.dig_H4}')
+        print(f'H5: {self.dig_H5}')
+        print(f'H6: {self.dig_H6}')
+   
     def read_raw_temp(self):
         """Waits for reading to become available on device."""
         """Does a single burst read of all data values from device."""
@@ -206,6 +265,19 @@ class BME280(object):
             attempts+=1
             if attempts>10: raise BME280ReadError('read_raw_temp')
         self.BME280Data = self._device.readList(BME280_REGISTER_DATA, 8)
+        raw = ((self.BME280Data[3] << 16) | (self.BME280Data[4] << 8) | self.BME280Data[5]) >> 4
+        return raw
+
+    def read_raw_temp2(self):
+        """
+        Reading while data don't repeat twice
+        """
+        res_list = ['dummy']
+        while Counter(res_list).most_common(1)[0][1]<2:
+            self.read_raw_temp()
+            res_list.append(tuple(self.BME280Data))
+        _LOGGER.info(f'spi{self._spi_bus}.{self._spi_dev}: {res_list}')
+        self.BME280Data = Counter(res_list).most_common(1)[0][0]
         raw = ((self.BME280Data[3] << 16) | (self.BME280Data[4] << 8) | self.BME280Data[5]) >> 4
         return raw
 
@@ -223,6 +295,7 @@ class BME280(object):
         raw = (self.BME280Data[6] << 8) | self.BME280Data[7]
         return raw
 
+    @round02
     def read_temperature(self):
         """Gets the compensated temperature in degrees celsius."""
         # float in Python is double precision
@@ -234,8 +307,9 @@ class BME280(object):
         temp = (var1 + var2) / 5120.0
         return temp
 
+    @round0
     def read_pressure(self):
-        """Gets the compensated pressure in Pascals."""
+        """Gets the compensated pressure in hPa."""
         adc = float(self.read_raw_pressure())
         var1 = float(self.t_fine) / 2.0 - 64000.0
         var2 = var1 * var1 * float(self.dig_P6) / 32768.0
@@ -250,21 +324,18 @@ class BME280(object):
         p = ((p - var2 / 4096.0) * 6250.0) / var1
         var1 = float(self.dig_P9) * p * p / 2147483648.0
         var2 = p * float(self.dig_P8) / 32768.0
-        p = p + (var1 + var2 + float(self.dig_P7)) / 16.0
+        p = (p + (var1 + var2 + float(self.dig_P7)) / 16.0) / 100
         return p
 
+    @round02
     def read_humidity(self):
         adc = float(self.read_raw_humidity())
-        # print 'Raw humidity = {0:d}'.format (adc)
+        #print('Raw humidity = {0:f}'.format(adc))
         h = float(self.t_fine) - 76800.0
         h = (adc - (float(self.dig_H4) * 64.0 + float(self.dig_H5) / 16384.0 * h)) * (
         float(self.dig_H2) / 65536.0 * (1.0 + float(self.dig_H6) / 67108864.0 * h * (
         1.0 + float(self.dig_H3) / 67108864.0 * h)))
         h = h * (1.0 - float(self.dig_H1) * h / 524288.0)
-        if h > 100:
-            h = 100
-        elif h < 0:
-            h = 0
         return h
 
     def read_temperature_f(self):
@@ -305,32 +376,39 @@ class BME280(object):
     @property
     def pressure(self):
         """Return pressure in hPa."""
-        hectopascals = self._pressure / 100
+        hectopascals = self._pressure
         return hectopascals
 
     @property
     def sample_ok(self):
         return self._ok
-    
 
     def update(self):
-        """Read raw data and update compensated variables."""
+        """Read raw data while data don't repeat twice and update compensated variables."""
+        res_list = ['dummy']
         try:
-            temperature = self.read_temperature()
-            if (temperature >= -40) and (temperature < 80):
-                self._temperature = temperature
-                self._ok = True
-            else:
-                self._ok = False
-            humidity = self.read_humidity()
-            if (humidity > 0) and (humidity < 100):
-                self._humidity = humidity
-            else:
-                self._ok = False
-            pressure = self.read_pressure()
-            if (pressure > 30000) and (pressure<110000):
-                self._pressure = pressure
-            else:
-                self._ok = False
+            while Counter(res_list).most_common(1)[0][1]<2:
+                temperature = self.read_temperature()
+                humidity = self.read_humidity()
+                pressure = self.read_pressure()
+                res_list.append((temperature, humidity, pressure))
+            self._temperature, self._humidity, self._pressure = Counter(res_list).most_common(1)[0][0]
+            self._ok = True
+            _LOGGER.info(f'spi{self._spi_bus}.{self._spi_dev}: {res_list}')
+            print(f'spi{self._spi_bus}.{self._spi_dev}: {res_list}')
+            _LOGGER.info(f'spi{self._spi_bus}.{self._spi_dev} t: {self._temperature} h: {self._humidity} p: {self._pressure}')
         except BME280ReadError:
             self._ok = False
+            _LOGGER.error(f'spi{self._spi_bus}.{self._spi_dev} BME280ReadError')
+    
+    def _update(self):
+        """Read raw data and update compensated variables."""
+        try:
+            self._temperature = self.read_temperature()
+            self._humidity = self.read_humidity()
+            self._pressure = self.read_pressure()
+            self._ok = True
+            _LOGGER.info(f'spi{self._spi_bus}.{self._spi_dev} t: {self._temperature} h: {self._humidity} p: {self._pressure}')
+        except BME280ReadError:
+            self._ok = False
+            _LOGGER.error(f'spi{self._spi_bus}.{self._spi_dev} BME280ReadError')
